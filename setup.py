@@ -1,20 +1,4 @@
 from setuptools import find_packages, setup
-from torch.utils import cpp_extension
-
-ext_modules = [
-    cpp_extension.CUDAExtension(
-        'lmcache.c_ops',
-        [
-            'csrc/pybind.cpp',
-            'csrc/mem_kernels.cu',
-            'csrc/cal_cdf.cu',
-            'csrc/ac_enc.cu',
-            'csrc/ac_dec.cu',
-        ],
-    ),
-]
-
-cmdclass = {'build_ext': cpp_extension.BuildExtension}
 
 setup(
     name="lmcache",
@@ -26,12 +10,10 @@ setup(
     long_description_content_type="text/markdown",
     packages=find_packages(exclude=("csrc")),
     install_requires=[
-        "torch == 2.5.1", "numpy==1.26.4", "aiofiles", "pyyaml", "redis",
-        "nvtx", "safetensors", "transformers", "torchac_cuda >= 0.2.5",
+        "torch == 2.6.0+cpu", "numpy==1.26.4", "aiofiles", "pyyaml", "redis",
+        "nvtx", "safetensors", "transformers",
         "sortedcontainers", "prometheus_client", "infinistore", "msgspec"
     ],
-    ext_modules=ext_modules,
-    cmdclass=cmdclass,
     classifiers=[
         # Trove classifiers
         # Full list at https://pypi.org/classifiers/

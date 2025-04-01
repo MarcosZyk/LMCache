@@ -1,14 +1,17 @@
-IMAGE=<IMAGE_NAME>:<TAG>
-docker run --runtime nvidia --gpus all \
-    --env "HF_TOKEN=<YOUR_HUGGINGFACE_TOKEN>" \
+IMAGE=vllm-cpu-lmcache:v1
+docker run \
+    --env "HUGGING_FACE_HUB_TOKEN=<>" \
+    --env "LMCACHE_CONFIG_FILE=/workspace/lmcache-config/example.yaml" \
     --env "LMCACHE_USE_EXPERIMENTAL=True" \
-    --env "chunk_size=256" \
-    --env "local_cpu=True" \
-    --env "max_local_cpu_size=5" \
+    --env "VLLM_MLA_DISABLE=1" \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
-    --network host \
-    --entrypoint "/usr/local/bin/vllm" \
+    -v ./example.yaml:/workspace/lmcache-config/example.yaml \
+    --ipc=host \
     $IMAGE \
-    serve mistralai/Mistral-7B-Instruct-v0.2 --kv-transfer-config \
+    --model Qwen/Qwen2.5-0.5B-Instruct \
+	  --seed 0 \
+	  --kv-transfer-config \
     '{"kv_connector":"LMCacheConnector","kv_role":"kv_both"}' \
     --enable-chunked-prefill false
+
+

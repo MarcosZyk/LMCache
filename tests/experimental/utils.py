@@ -6,8 +6,7 @@ import threading
 import torch
 
 from lmcache.config import LMCacheEngineMetadata
-from lmcache.experimental.gpu_connector import (VLLMNestedTupleGPUConnector,
-                                                VLLMPagedMemGPUConnector)
+from lmcache.experimental.gpu_connector import (VLLMPagedMemGPUConnectorV2)
 from lmcache.utils import CacheEngineKey
 
 
@@ -204,7 +203,4 @@ def check_kv_cache_device(kvs, device):
 
 
 def create_gpu_connector(hidden_dim, num_layers, paged=False):
-    if paged:
-        return VLLMPagedMemGPUConnector(hidden_dim, num_layers)
-    else:
-        return VLLMNestedTupleGPUConnector(hidden_dim, num_layers)
+    return VLLMPagedMemGPUConnectorV2(hidden_dim, num_layers)

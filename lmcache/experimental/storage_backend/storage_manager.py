@@ -41,7 +41,7 @@ class StorageManager:
         self.thread.start()
 
         #TODO: remove hardcode
-        dst_device = "cuda"
+        dst_device = "cpu"
         self.storage_backends: OrderedDict[str, StorageBackendInterface] =\
             CreateStorageBackends(
                 config, metadata,
@@ -56,8 +56,6 @@ class StorageManager:
         self.manager_lock = threading.Lock()
 
         self.lookup_server = lookup_server
-
-        self.stream = torch.cuda.Stream()
 
     def allocate(
         self,
@@ -173,11 +171,8 @@ class StorageManager:
 
             # Copy the tensor to the cpu memory object
             assert cpu_memory_obj.tensor is not None
-            self.stream.wait_stream(torch.cuda.default_stream())
-            with torch.cuda.stream(self.stream):
-                cpu_memory_obj.tensor.copy_(memory_obj.tensor,
+            cpu_memory_obj.tensor.copy_(memory_obj.tensor,
                                             non_blocking=True)
-            memory_obj.tensor.record_stream(self.stream)
 
             # Update the hot cache
             self.manager_lock.acquire()

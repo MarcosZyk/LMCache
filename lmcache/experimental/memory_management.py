@@ -583,7 +583,7 @@ class PinMemoryAllocator(MemoryAllocatorInterface):
         """
         :param int size: The size of the pinned memory in bytes.
         """
-        buffer = torch.empty(size, dtype=torch.uint8, pin_memory=True)
+        buffer = torch.empty(size, dtype=torch.uint8, pin_memory=False)
 
         self.allocator = TensorMemoryAllocator(buffer)
 
@@ -629,7 +629,7 @@ class MixedMemoryAllocator(MemoryAllocatorInterface):
         """
         :param int size: The size of the pinned memory in bytes.
         """
-        buffer = torch.empty(size, dtype=torch.uint8, pin_memory=True)
+        buffer = torch.empty(size, dtype=torch.uint8, pin_memory=False)
 
         self.pin_allocator = TensorMemoryAllocator(buffer)
         self.buffer_allocator = BufferAllocator("cpu")

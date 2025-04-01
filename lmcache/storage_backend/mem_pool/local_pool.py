@@ -82,7 +82,7 @@ class LocalCPUPool(LocalPool):
                 torch.empty(metadata.kv_shape,
                             dtype=kv_dtype,
                             device='cpu',
-                            pin_memory=use_pinned_memory)
+                            pin_memory=False)
                 for i in range(self.max_chunk_num)
             ]
 

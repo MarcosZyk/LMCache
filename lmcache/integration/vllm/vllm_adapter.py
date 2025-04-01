@@ -1,4 +1,5 @@
 import dataclasses
+import sys
 from copy import deepcopy
 from enum import Enum
 from typing import TYPE_CHECKING, List, Optional, Tuple, Union
@@ -8,9 +9,8 @@ import torch.distributed as dist
 from torch.nn.utils.rnn import pad_sequence
 
 if TYPE_CHECKING:
-    from vllm.worker.model_runner import ModelInputForGPUWithSamplingMetadata
+    from vllm.worker.cpu_model_runner import ModelInputForCPUWithSamplingMetadata
 
-from vllm.attention.backends.flash_attn import FlashAttentionMetadata
 from vllm.config import CacheConfig, ModelConfig, ParallelConfig
 from vllm.sequence import IntermediateTensors
 from vllm.utils import get_kv_cache_torch_dtype
@@ -29,7 +29,7 @@ from lmcache.utils import _lmcache_nvtx_annotate
 
 logger = init_logger(__name__)
 
-LMCACHE_CUDA_STREAM = torch.cuda.Stream()
+# LMCACHE_CUDA_STREAM = torch.cuda.Stream()
 
 
 class StoreStatus(Enum):
@@ -101,13 +101,13 @@ def init_lmcache_engine(
 
 
 def broadcast_seq_group_list(
-    model_input: "ModelInputForGPUWithSamplingMetadata",
+    model_input: "ModelInputForCPUWithSamplingMetadata",
     is_driver_worker: bool,
-) -> "ModelInputForGPUWithSamplingMetadata":
+) -> "ModelInputForCPUWithSamplingMetadata":
     """Broadcast the `model_input` from driver worker to non-driver workers.
 
     :param model_input: The model input for the current request.
-    :type model_input: ModelInputForGPUWithSamplingMetadata
+    :type model_input: ModelInputForCPUWithSamplingMetadata
 
     :param is_driver_worker: Whether the code is executed in driver worker. 
     :type is_driver_worker: bool
@@ -151,21 +151,18 @@ def close_lmcache_engine() -> None:
 
 # This function is not used for now
 def lmcache_should_retrieve(
-    model_input: "ModelInputForGPUWithSamplingMetadata",
+    model_input: "ModelInputForCPUWithSamplingMetadata",
 ) -> List[RetrieveStatus]:
     """Check should we retrieve KV from LMCache for the current model_input.
 
     :param model_input: The model input for the current request.
-    :type model_input: ModelInputForGPUWithSamplingMetadata
+    :type model_input: ModelInputForCPUWithSamplingMetadata
 
     :param kv_caches: The paged memory
     :type kv_caches: List[torch.Tensor]
 
     :return: RetrieveStatus.
     """
-
-    assert isinstance(model_input.attn_metadata, FlashAttentionMetadata), \
-        "Only FlashAttention backend is supported for now."
 
     # model_input doesn't have seq_lens in tp
     # but attn_metadata does
@@ -211,16 +208,17 @@ def lmcache_should_retrieve(
                 [RetrieveStatus.PREFILL] * num_seqs_in_seq_group
             seq_data_idx = seq_data_idx_end
 
+    print(retrieve_status)
     return retrieve_status
 
 
 def lmcache_should_store(
-    model_input: "ModelInputForGPUWithSamplingMetadata",
+    model_input: "ModelInputForCPUWithSamplingMetadata",
 ) -> List[StoreStatus]:
     """Check should we store KV into LMCache for the current model_input.
 
     :param model_input: The model input for the current request.
-    :type model_input: ModelInputForGPUWithSamplingMetadata
+    :type model_input: ModelInputForCPUWithSamplingMetadata
 
 
     :return: A list of StoreStatus.
@@ -237,9 +235,6 @@ def lmcache_should_store(
             return False
 
         return blend_metadata.processed_layer_count > 0
-
-    assert isinstance(model_input.attn_metadata, FlashAttentionMetadata), \
-        "Only FlashAttention backend is supported for now."
 
     seq_lens = model_input.attn_metadata.seq_lens
     assert seq_lens is not None
@@ -329,7 +324,7 @@ def lmcache_store_kv(
     parallel_config: ParallelConfig,
     cache_config: CacheConfig,
     model_executable: torch.nn.Module,
-    model_input: "ModelInputForGPUWithSamplingMetadata",
+    model_input: "ModelInputForCPUWithSamplingMetadata",
     kv_caches: List[torch.Tensor],
     store_status: List[StoreStatus],
 ) -> None:
@@ -339,7 +334,7 @@ def lmcache_store_kv(
     :type model_executable: torch.nn.Module
 
     :param model_input: The model input for the current request.
-    :type model_input: ModelInputForGPUWithSamplingMetadata
+    :type model_input: ModelInputForCPUWithSamplingMetadata
 
     :param kv_caches: The paged memory to get KV from
     :type kv_caches: List[torch.Tensor]
@@ -349,9 +344,6 @@ def lmcache_store_kv(
     """
     engine = LMCacheEngineBuilder.get(ENGINE_NAME)
     assert engine is not None, "LMCache engine is not initialized."
-
-    assert isinstance(model_input.attn_metadata, FlashAttentionMetadata), \
-        "Only FlashAttention backend is supported for now."
 
     seq_lens = model_input.attn_metadata.seq_lens
     assert seq_lens is not None
@@ -470,11 +462,11 @@ def lmcache_store_kv(
 @_lmcache_nvtx_annotate
 def lmcache_retrieve_kv(
     model_executable: torch.nn.Module,
-    model_input: "ModelInputForGPUWithSamplingMetadata",
+    model_input: "ModelInputForCPUWithSamplingMetadata",
     cache_config: CacheConfig,
     kv_caches: List[torch.Tensor],
     retrieve_status: List[RetrieveStatus],
-) -> Tuple["ModelInputForGPUWithSamplingMetadata", bool, Union[
+) -> Tuple["ModelInputForCPUWithSamplingMetadata", bool, Union[
         torch.Tensor, IntermediateTensors]]:
     """Retrieve the KV caches from LMCache for the current model_input. And 
     rebuild the model_input to reflect the changes in KV if necessary.
@@ -483,7 +475,7 @@ def lmcache_retrieve_kv(
     :type model_executable: torch.nn.Module
 
     :param model_input: The model input for the current request.
-    :type model_input: ModelInputForGPUWithSamplingMetadata
+    :type model_input: ModelInputForCPUWithSamplingMetadata
 
     :param kv_caches: The paged memory to put KV to
     :type kv_caches: List[torch.Tensor]
@@ -502,9 +494,6 @@ def lmcache_retrieve_kv(
 
     if engine.config.enable_blending:
         return model_input, False, None
-
-    assert isinstance(model_input.attn_metadata, FlashAttentionMetadata), \
-        "Only FlashAttention backend is supported for now."
 
     query_start_loc = model_input.attn_metadata.query_start_loc
     assert query_start_loc is not None
@@ -694,7 +683,7 @@ def lmcache_retrieve_kv(
 
 
 def build_partial_prefill_input(
-    model_input: "ModelInputForGPUWithSamplingMetadata",
+    model_input: "ModelInputForCPUWithSamplingMetadata",
     full_tokens_list: List[torch.Tensor],
     num_computed_tokens_list: List[int],
     start_pos_list: List[int],
@@ -704,15 +693,12 @@ def build_partial_prefill_input(
     do_sample_list: List[bool],
     device: torch.device,
     cache_config: CacheConfig,
-) -> "ModelInputForGPUWithSamplingMetadata":
+) -> "ModelInputForCPUWithSamplingMetadata":
     """Helper function to rebuild the model input for the current request.
     """
     assert model_input.attn_metadata is not None
-    assert isinstance(model_input.attn_metadata, FlashAttentionMetadata), \
-        "Only FlashAttention backend is supported for now."
-    assert model_input.attn_metadata.context_lens_tensor is not None
-    assert model_input.attn_metadata.block_tables is not None
     assert model_input.attn_metadata.query_start_loc is not None
+    assert model_input.attn_metadata.block_tables is not None
     assert model_input.input_positions is not None
 
     rebuilt_input_tokens = []
@@ -726,7 +712,6 @@ def build_partial_prefill_input(
     rebuilt_block_tables = []
 
     rebuilt_query_start_loc = [0]
-    rebuilt_context_lens_tensor = []
     rebuilt_selected_token_indices = []
 
     last_query_start_loc = 0
@@ -762,17 +747,16 @@ def build_partial_prefill_input(
 
         last_query_start_loc += q_len
         rebuilt_query_start_loc.append(last_query_start_loc)  # start with 0
-        rebuilt_context_lens_tensor.append(num_computed_token)
 
         # recover `block_table`
-        if len(model_input.attn_metadata.block_tables[idx]) > 0:
+        if len(model_input.attn_metadata.block_tables) > 0 and len(model_input.attn_metadata.block_tables[idx]) > 0:
             rebuilt_block_tables.append(
                 model_input.attn_metadata.block_tables[idx])
         else:
             slot_mapping_req = slot_mapping_flat[start_pos:end_slot_idx]
             vllm_block_size = cache_config.block_size
             rebuilt_block_table = slot_mapping_req[::16].to(torch.int32) \
-                // vllm_block_size
+                                  // vllm_block_size
             rebuilt_block_tables.append(rebuilt_block_table)
 
         # Sampling metadata related
@@ -780,7 +764,7 @@ def build_partial_prefill_input(
         if do_sample_list[idx]:
             rebuilt_selected_token_indices.append(last_query_start_loc - 1)
 
-    # rebuilt attn_metadata
+    # rebuilt attn_metadata "TorchSDPAMetadata"
     rebuilt_attn_metadata = deepcopy(model_input.attn_metadata)
     rebuilt_attn_metadata.num_prefills = rebuilt_num_prefills
     rebuilt_attn_metadata.num_prefill_tokens = rebuilt_num_prefill_tokens
@@ -794,10 +778,6 @@ def build_partial_prefill_input(
     rebuilt_attn_metadata.query_start_loc = torch.tensor(
         rebuilt_query_start_loc,
         dtype=model_input.attn_metadata.query_start_loc.dtype).to(device)
-    rebuilt_attn_metadata.context_lens_tensor = torch.tensor(
-        rebuilt_context_lens_tensor,
-        dtype=model_input.attn_metadata.context_lens_tensor.dtype,
-    ).to(device)
 
     rebuilt_attn_metadata._cached_prefill_metadata = None
     rebuilt_sampling_metadata = None
@@ -814,8 +794,8 @@ def build_partial_prefill_input(
         ).to(device)
 
     # import here to avoid circular import.
-    from vllm.worker.model_runner import ModelInputForGPUWithSamplingMetadata
-    rebuilt_model_input = ModelInputForGPUWithSamplingMetadata(
+    from vllm.worker.cpu_model_runner import ModelInputForCPUWithSamplingMetadata
+    rebuilt_model_input = ModelInputForCPUWithSamplingMetadata(
         input_tokens=torch.cat(rebuilt_input_tokens).to(device),
         input_positions=torch.cat(rebuilt_input_positions).to(device),
         seq_lens=model_input.seq_lens,
@@ -823,15 +803,10 @@ def build_partial_prefill_input(
         lora_mapping=model_input.lora_mapping,
         lora_requests=model_input.lora_requests,
         attn_metadata=rebuilt_attn_metadata,
-        prompt_adapter_mapping=model_input.prompt_adapter_mapping,
-        prompt_adapter_requests=model_input.prompt_adapter_requests,
         multi_modal_kwargs=model_input.multi_modal_kwargs,
-        request_ids_to_seq_ids=model_input.request_ids_to_seq_ids,
-        finished_requests_ids=model_input.finished_requests_ids,
         virtual_engine=model_input.virtual_engine,
         sampling_metadata=rebuilt_sampling_metadata,
         is_prompt=model_input.is_prompt,
-        async_callback=model_input.async_callback,
     )
 
     return rebuilt_model_input

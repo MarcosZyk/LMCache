@@ -37,20 +37,10 @@ WORKDIR /workspace
 
 # install build and runtime dependencies
 COPY requirements-common.txt requirements-common.txt
-COPY requirements-cuda.txt requirements-cuda.txt
+COPY requirements-cpu.txt requirements-cpu.txt
 RUN --mount=type=cache,target=/root/.cache/pip \
-    python3 -m pip install -r requirements-cuda.txt
+    python3 -m pip install -r requirements-cpu.txt
 
-
-# cuda arch list used by torch
-# can be useful for both `dev` and `test`
-# explicitly set the list to avoid issues with torch 2.2
-# see https://github.com/pytorch/pytorch/pull/123243
-ARG torch_cuda_arch_list='7.0 7.5 8.0 8.6 8.9 9.0+PTX'
-ENV TORCH_CUDA_ARCH_LIST=${torch_cuda_arch_list}
-# Override the arch list for flash-attn to reduce the binary size
-ARG vllm_fa_cmake_gpu_arches='80-real;90-real'
-ENV VLLM_FA_CMAKE_GPU_ARCHES=${vllm_fa_cmake_gpu_arches}
 #################### BASE BUILD IMAGE ####################
 
 #################### WHEEL BUILD IMAGE ####################
@@ -72,40 +62,28 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 ARG LMCACHE_COMMIT_ID=1
 
-RUN git clone https://github.com/LMCache/LMCache.git
-RUN git clone https://github.com/LMCache/torchac_cuda.git
+RUN git clone -b cpu https://github.com/MarcosZyk/LMCache.git
 
 
 WORKDIR /workspace/LMCache
 RUN --mount=type=cache,target=/root/.cache/ccache \
     --mount=type=cache,target=/root/.cache/pip \
     python3 setup.py bdist_wheel --dist-dir=dist_lmcache
-
-WORKDIR /workspace/torchac_cuda
-RUN --mount=type=cache,target=/root/.cache/ccache \
-    --mount=type=cache,target=/root/.cache/pip \
-    python3 setup.py bdist_wheel --dist-dir=/workspace/LMCache/dist_lmcache
     
 
 #################### vLLM installation IMAGE ####################
-# Install torchac_cuda wheel into the vLLM image
-FROM vllm/vllm-openai:v0.7.3 AS vllm-openai
-RUN --mount=type=bind,from=build,src=/workspace/LMCache/dist_lmcache,target=/vllm-workspace/dist_lmcache \
+# Install lmcache wheel into the vLLM image
+FROM vllm-cpu-env:latest AS vllm-cpu
+
+RUN --mount=type=bind,from=build,src=/workspace/LMCache/dist_lmcache,target=/workspace/dist_lmcache \
 --mount=type=cache,target=/root/.cache/pip \
 pip install dist_lmcache/*.whl --verbose
 
 # Copy lmc_connector patch into vllm
 COPY patch/factory.py \
-    /usr/local/lib/python3.12/dist-packages/vllm/distributed/kv_transfer/kv_connector/
+    /workspace/vllm/vllm/distributed/kv_transfer/kv_connector/
 COPY patch/lmcache_connector.py \
-    /usr/local/lib/python3.12/dist-packages/vllm/distributed/kv_transfer/kv_connector/
-
-# Use diff if file is too large
-COPY patch/parallel_state.patch \
-    /usr/local/lib/python3.12/dist-packages/vllm/distributed/
-
-RUN patch /usr/local/lib/python3.12/dist-packages/vllm/distributed/parallel_state.py \
-    /usr/local/lib/python3.12/dist-packages/vllm/distributed/parallel_state.patch
+    /workspace/vllm/vllm/distributed/kv_transfer/kv_connector/
 
 
-ENTRYPOINT ["vllm", "serve"]
+ENTRYPOINT ["python3", "-m", "vllm.entrypoints.openai.api_server"]

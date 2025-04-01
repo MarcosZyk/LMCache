@@ -1,0 +1,6 @@
+# example.yaml
+chunk_size: 32 # will try to recv kv cache from remote storage backend if tokens is larger than chunk_size otherwise it will recompute.
+local_device: "cpu"
+max_local_cpu_size: 30 # GB
+# Whether retrieve() is pipelined or not
+pipelined_backend: False

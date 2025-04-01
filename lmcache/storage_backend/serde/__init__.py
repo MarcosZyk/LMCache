@@ -2,8 +2,6 @@ from typing import Optional, Tuple
 
 from lmcache.config import (GlobalConfig, LMCacheEngineConfig,
                             LMCacheEngineMetadata)
-from lmcache.storage_backend.serde.cachegen_decoder import CacheGenDeserializer
-from lmcache.storage_backend.serde.cachegen_encoder import CacheGenSerializer
 from lmcache.storage_backend.serde.fast_serde import (FastDeserializer,
                                                       FastSerializer)
 from lmcache.storage_backend.serde.safe_serde import (SafeDeserializer,
@@ -29,8 +27,7 @@ def CreateSerde(
     elif serde_type == "safetensor":
         s, d = SafeSerializer(), SafeDeserializer(metadata.kv_dtype)
     elif serde_type == "cachegen":
-        s, d = CacheGenSerializer(config, metadata), CacheGenDeserializer(
-            config, metadata, metadata.kv_dtype)
+        raise ValueError(f"Invalid serde type: {serde_type}")
     elif serde_type == "fast":
         s, d = FastSerializer(), FastDeserializer(metadata.kv_dtype)
     else:
@@ -47,7 +44,5 @@ __all__ = [
     "Deserializer",
     "TorchSerializer",
     "TorchDeserializer",
-    "CacheGenDeserializer",
-    "CacheGenSerializer",
     "CreateSerde",
 ]
