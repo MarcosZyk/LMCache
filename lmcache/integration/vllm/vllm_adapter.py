@@ -416,7 +416,7 @@ def lmcache_store_kv(
                     # NOTE(Jiayi): the cache is stored even if it's in vllm
                     # as long as it's not in lmc
                     assert block_tables is not None
-                    block_table_full = block_tables[seq_group_idx] if len(block_tables) > 0 else []
+                    block_table_full = block_tables[seq_group_idx] if len(block_tables) > 0 else torch.tensor([], device="cpu")
                     vllm_block_size = cache_config.block_size
 
                     n_block = len(block_table_full)
